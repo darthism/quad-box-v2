@@ -17,15 +17,17 @@ exports.handler = async (event) => {
       const result = await query(
         `
         select
-          username,
+          gl.username,
+          u.id as user_id,
           coalesce(sum(coalesce(elapsed_seconds, 0)), 0) / 60.0 as total_minutes,
           count(*)::int as total_games,
           sum(case when status = 'completed' then 1 else 0 end)::int as completed_games,
           coalesce(sum(points), 0)::bigint as total_score,
           max(played_at) as last_played
-        from game_log
-        where status <> 'tombstone'
-        group by username
+        from game_log gl
+        left join app_user u on u.username = gl.username
+        where gl.status <> 'tombstone'
+        group by gl.username, u.id
         order by total_minutes desc, total_score desc
         limit $1
         `,
@@ -36,6 +38,7 @@ exports.handler = async (event) => {
         category,
         rows: result.rows.map(r => ({
           username: r.username,
+          avatarUrl: r.user_id ? `/api/avatar?userId=${encodeURIComponent(r.user_id)}` : null,
           totalMinutes: Number(r.total_minutes),
           totalGames: r.total_games,
           completedGames: r.completed_games,
@@ -49,15 +52,17 @@ exports.handler = async (event) => {
     const result = await query(
       `
       select
-        username,
+        gl.username,
+        u.id as user_id,
         coalesce(sum(points), 0)::bigint as total_score,
         count(*)::int as total_games,
         sum(case when status = 'completed' then 1 else 0 end)::int as completed_games,
         coalesce(sum(coalesce(elapsed_seconds, 0)), 0) / 60.0 as total_minutes,
         max(played_at) as last_played
-      from game_log
-      where status <> 'tombstone'
-      group by username
+      from game_log gl
+      left join app_user u on u.username = gl.username
+      where gl.status <> 'tombstone'
+      group by gl.username, u.id
       order by total_score desc, total_minutes desc
       limit $1
       `,
@@ -68,6 +73,7 @@ exports.handler = async (event) => {
       category: 'score',
       rows: result.rows.map(r => ({
         username: r.username,
+        avatarUrl: r.user_id ? `/api/avatar?userId=${encodeURIComponent(r.user_id)}` : null,
         totalScore: String(r.total_score),
         totalGames: r.total_games,
         completedGames: r.completed_games,

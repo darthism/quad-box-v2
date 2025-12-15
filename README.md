@@ -37,6 +37,7 @@ Set these in your hosting provider (or in `.env.local` for local testing):
 - `TIMESCALE_SERVICE_URL` (or `DATABASE_URL`): your Postgres connection string (SSL required)
 - `JWT_SECRET`: random secret used to sign login tokens
 - `ADMIN_INIT_TOKEN`: random secret to protect `POST /api/init-db`
+- `SIGHTENGINE_USER`, `SIGHTENGINE_SECRET`: required for SFW username + avatar moderation at signup
 
 ### Initialize the database
 

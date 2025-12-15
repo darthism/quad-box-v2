@@ -18,6 +18,8 @@ create table if not exists app_user (
   id uuid primary key default gen_random_uuid(),
   username text not null unique,
   password_hash text not null,
+  avatar_mime text,
+  avatar_bytes bytea,
   created_at timestamptz not null default now()
 );
 
@@ -32,9 +34,14 @@ create table if not exists game_log (
   modalities int,
   trial_time_ms int,
   elapsed_seconds real,
+  accuracy real,
   points bigint not null default 0,
   played_at timestamptz not null default now()
 );
+
+alter table app_user add column if not exists avatar_mime text;
+alter table app_user add column if not exists avatar_bytes bytea;
+alter table game_log add column if not exists accuracy real;
 
 create index if not exists game_log_username_idx on game_log(username);
 create index if not exists game_log_played_at_idx on game_log(played_at desc);

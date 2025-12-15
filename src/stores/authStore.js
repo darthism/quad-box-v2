@@ -54,10 +54,13 @@ const createAuthStore = () => {
   return {
     subscribe,
 
-    signup: async (username, password) => {
+    signup: async (username, password, avatarDataUrl) => {
       const u = validateUsername(username)
       const p = validatePassword(password)
-      const data = await apiFetch('/api/signup', { method: 'POST', body: { username: u, password: p } })
+      if (!avatarDataUrl) {
+        throw new Error('Avatar is required.')
+      }
+      const data = await apiFetch('/api/signup', { method: 'POST', body: { username: u, password: p, avatarDataUrl } })
       saveToken(data.token)
       set({ user: data.user, token: data.token, ready: true })
     },

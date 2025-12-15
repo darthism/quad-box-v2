@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs')
 const { query } = require('./_db.cjs')
 const { signToken } = require('./_auth.cjs')
 const { json, badRequest, methodNotAllowed, parseJsonBody } = require('./_http.cjs')
+const { checkUsernameSfw, checkAvatarSfw } = require('./_sightengine.cjs')
 
 function validateUsername(username) {
   const u = String(username ?? '').trim()
@@ -23,6 +24,31 @@ function validatePassword(password) {
   return p
 }
 
+function parseAvatarDataUrl(dataUrl) {
+  const s = String(dataUrl ?? '')
+  const m = s.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/)
+  if (!m) {
+    const err = new Error('Avatar is required and must be a PNG, JPEG, or WebP image.')
+    err.statusCode = 400
+    throw err
+  }
+  const mime = m[1]
+  const b64 = m[2]
+  const buf = Buffer.from(b64, 'base64')
+  if (!buf || buf.length === 0) {
+    const err = new Error('Avatar image is empty.')
+    err.statusCode = 400
+    throw err
+  }
+  // Keep avatars small; client will resize/compress.
+  if (buf.length > 256 * 1024) {
+    const err = new Error('Avatar image is too large. Please upload a smaller image.')
+    err.statusCode = 400
+    throw err
+  }
+  return { mime, buf }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed()
 
@@ -30,14 +56,21 @@ exports.handler = async (event) => {
     const body = parseJsonBody(event)
     const username = validateUsername(body.username)
     const password = validatePassword(body.password)
+    const { mime: avatarMime, buf: avatarBytes } = parseAvatarDataUrl(body.avatarDataUrl)
+
+    const nameOk = await checkUsernameSfw(username)
+    if (!nameOk.ok) return badRequest(nameOk.reason || 'Username rejected.')
+
+    const avatarOk = await checkAvatarSfw(avatarBytes, avatarMime)
+    if (!avatarOk.ok) return badRequest(avatarOk.reason || 'Avatar rejected.')
 
     const passwordHash = await bcrypt.hash(password, 10)
 
     const result = await query(
-      `insert into app_user (username, password_hash)
-       values ($1, $2)
+      `insert into app_user (username, password_hash, avatar_mime, avatar_bytes)
+       values ($1, $2, $3, $4)
        returning id, username`,
-      [username, passwordHash],
+      [username, passwordHash, avatarMime, avatarBytes],
     )
 
     const user = result.rows[0]

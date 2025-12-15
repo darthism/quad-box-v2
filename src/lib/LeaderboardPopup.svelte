@@ -145,7 +145,17 @@
                   {@const rank = rankForScore(parseBigInt(r.totalScore))}
                   <tr>
                     <td>{idx + 1}</td>
-                    <td class="font-semibold">{r.username}</td>
+                    <td class="font-semibold">
+                      <div class="flex items-center gap-2">
+                        <img
+                          class="w-8 h-8 rounded-full ring-1 ring-base-content/10"
+                          alt=""
+                          loading="lazy"
+                          src={r.avatarUrl || '/quadbox.svg'}
+                        />
+                        <span>{r.username}</span>
+                      </div>
+                    </td>
                     <td><span class={rank.badge}>{rank.name}</span></td>
                     <td>{formatMinutes(r.totalMinutes)}</td>
                     <td>{r.totalGames}</td>
@@ -179,7 +189,17 @@
                   {@const rank = rankForScore(parseBigInt(r.totalScore))}
                   <tr>
                     <td>{idx + 1}</td>
-                    <td class="font-semibold">{r.username}</td>
+                    <td class="font-semibold">
+                      <div class="flex items-center gap-2">
+                        <img
+                          class="w-8 h-8 rounded-full ring-1 ring-base-content/10"
+                          alt=""
+                          loading="lazy"
+                          src={r.avatarUrl || '/quadbox.svg'}
+                        />
+                        <span>{r.username}</span>
+                      </div>
+                    </td>
                     <td><span class={rank.badge}>{rank.name}</span></td>
                     <td class="font-mono">{formatBigInt(parseBigInt(r.totalScore))}</td>
                     <td>{r.completedGames}</td>

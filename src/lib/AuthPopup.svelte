@@ -8,6 +8,8 @@
   let username = ''
   let password = ''
   let password2 = ''
+  let avatarDataUrl = ''
+  let avatarPreviewUrl = ''
   let message = null
   let busy = false
 
@@ -22,6 +24,8 @@
     busy = false
     password = ''
     password2 = ''
+    avatarDataUrl = ''
+    avatarPreviewUrl = ''
   }
 
   const handleKeydown = (event) => {
@@ -30,6 +34,40 @@
 
   const handleBackdropClick = (event) => {
     if (event.target.classList.contains('modal')) closeModal()
+  }
+
+  const fileToAvatarDataUrl = async (file) => {
+    if (!file) return ''
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      throw new Error('Avatar must be a PNG, JPEG, or WebP image.')
+    }
+    // Client-side resize/compress to keep payload small.
+    const bmp = await createImageBitmap(file)
+    const max = 128
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * scale))
+    const h = Math.max(1, Math.round(bmp.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bmp, 0, 0, w, h)
+    // Always output JPEG for size (server accepts jpeg/png/webp; we send jpeg).
+    return canvas.toDataURL('image/jpeg', 0.85)
+  }
+
+  const onAvatarChange = async (event) => {
+    message = null
+    try {
+      const file = event?.currentTarget?.files?.[0]
+      const dataUrl = await fileToAvatarDataUrl(file)
+      avatarDataUrl = dataUrl
+      avatarPreviewUrl = dataUrl
+    } catch (e) {
+      avatarDataUrl = ''
+      avatarPreviewUrl = ''
+      message = { kind: 'error', text: e?.message ?? 'Invalid avatar.' }
+    }
   }
 
   const doLogin = async () => {
@@ -53,7 +91,10 @@
       if (password !== password2) {
         throw new Error('Passwords do not match.')
       }
-      await auth.signup(username, password)
+      if (!avatarDataUrl) {
+        throw new Error('Avatar is required.')
+      }
+      await auth.signup(username, password, avatarDataUrl)
       message = { kind: 'success', text: 'Account created. You are now logged in.' }
       password = ''
       password2 = ''
@@ -100,6 +141,17 @@
             <label class="form-control w-full">
               <div class="label"><span class="label-text">Confirm password</span></div>
               <input class="input input-bordered w-full" type="password" bind:value={password2} autocomplete="new-password" />
+            </label>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Avatar (required)</span></div>
+              <input class="file-input file-input-bordered w-full" type="file" accept="image/png,image/jpeg,image/webp" on:change={onAvatarChange} />
+              {#if avatarPreviewUrl}
+                <div class="mt-2 flex items-center gap-3">
+                  <img alt="Avatar preview" class="w-12 h-12 rounded-full ring-1 ring-base-content/10" src={avatarPreviewUrl} />
+                  <div class="text-xs opacity-70">Will be shown publicly on the leaderboard.</div>
+                </div>
+              {/if}
             </label>
           {/if}
 
