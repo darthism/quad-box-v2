@@ -42,7 +42,7 @@ const pointsForGame = ({ modalities, nBack, trialTimeMs, accuracyPercent }) => {
   return (numer + 500000n) / 1000000n
 }
 
-const isEligibleForPoints = ({ status, completedTrials, matchChance }) => {
+const isEligibleForPoints = ({ status, completedTrials, matchChance, accuracyPercent }) => {
   if (status !== 'completed') return { ok: false, reason: 'not_completed' }
 
   const trials = Number(completedTrials)
@@ -52,6 +52,10 @@ const isEligibleForPoints = ({ status, completedTrials, matchChance }) => {
   const mc = Number(matchChance)
   if (!Number.isFinite(mc)) return { ok: false, reason: 'missing_match_rate' }
   if (mc < 20 || mc > 40) return { ok: false, reason: 'match_rate_out_of_range' }
+
+  // Require at least 50% accuracy to earn points
+  const acc = Number(accuracyPercent)
+  if (!Number.isFinite(acc) || acc < 0.5) return { ok: false, reason: 'accuracy_below_50' }
 
   return { ok: true }
 }
@@ -83,7 +87,7 @@ exports.handler = async (event) => {
       ? null
       : Number(body.accuracyPercent)
 
-    const eligibility = isEligibleForPoints({ status, completedTrials, matchChance })
+    const eligibility = isEligibleForPoints({ status, completedTrials, matchChance, accuracyPercent })
     const points = eligibility.ok
       ? pointsForGame({ modalities, nBack, trialTimeMs, accuracyPercent })
       : 0n

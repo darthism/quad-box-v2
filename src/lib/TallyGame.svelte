@@ -120,6 +120,10 @@ const endGame = async (status) => {
     return
   }
 
+  // Set isPlaying false immediately to prevent duplicate submissions
+  // (e.g., from onDestroy running while we're awaiting)
+  isPlaying.set(false)
+
   if (status === 'completed') {
     try {
       await delay(100)

@@ -109,6 +109,10 @@ const endGame = async (status) => {
     return
   }
 
+  // Set isPlaying false immediately to prevent duplicate submissions
+  // (e.g., from onDestroy running while we're awaiting)
+  isPlaying.set(false)
+
   const gameInfoRecord = { ...gameMeta, timestamp: Date.now() }
   if (trialsIndex > gameInfoRecord.nBack) {
     await analytics.scoreTrials(gameInfoRecord, status === 'completed' ? scoresheet : scoresheet.slice(0, trialsIndex), status)
