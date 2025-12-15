@@ -21,6 +21,27 @@ This project is a **static frontend** (Svelte + Vite). Do **not** put a Postgres
 
 An example env template is in `env.example`.
 
+## Real accounts + global leaderboard (Netlify Functions + Postgres)
+
+This repo includes a small backend using **Netlify Functions** under `netlify/functions/`:
+
+- `POST /api/init-db` (one-time) creates tables
+- `POST /api/signup`, `POST /api/login`, `GET /api/me` for accounts (JWT)
+- `POST /api/submit-game` logs games server-side
+- `GET /api/leaderboard?category=score|minutes` returns global rankings
+
+### Required environment variables
+
+Set these in your hosting provider (or in `.env.local` for local testing):
+
+- `TIMESCALE_SERVICE_URL` (or `DATABASE_URL`): your Postgres connection string (SSL required)
+- `JWT_SECRET`: random secret used to sign login tokens
+- `ADMIN_INIT_TOKEN`: random secret to protect `POST /api/init-db`
+
+### Initialize the database
+
+After deploying, call `POST /api/init-db` with header `X-Admin-Token: <ADMIN_INIT_TOKEN>`.
+
 
 To view available shapes:
 ```

@@ -26,6 +26,7 @@
     "@lucide/svelte": "^0.511.0",
     "@mariohamann/activity-graph": "^1.0.5",
     "@tailwindcss/vite": "^4.1.7",
+    "bcryptjs": "^3.0.2",
     "chart.js": "^4.4.9",
     "chartjs-adapter-date-fns": "^3.0.0",
     "d3": "^7.9.0",
@@ -33,6 +34,8 @@
     "d3-random": "^3.0.1",
     "d3-shape": "^3.2.0",
     "howler": "^2.2.4",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
     "tailwindcss": "^4.1.7",
     "theme-change": "^2.5.0"
   }

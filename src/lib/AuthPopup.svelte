@@ -125,7 +125,7 @@
           </div>
 
           <div class="text-xs opacity-70">
-            This is local-only auth (stored on this device). For a real online account + global leaderboard, we can add a server backend.
+            Online account (stored on the server). Your login is saved on this device via a token.
           </div>
         </div>
       {:else}

@@ -1,80 +1,7 @@
 import { writable } from 'svelte/store'
+import { apiFetch } from '../lib/api'
 
-const USERS_KEY = 'qb_users_v1'
-const SESSION_KEY = 'qb_session_v1'
-
-const safeJsonParse = (value, fallback) => {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return fallback
-  }
-}
-
-const loadUsers = () => {
-  const raw = localStorage.getItem(USERS_KEY)
-  return raw ? safeJsonParse(raw, {}) : {}
-}
-
-const saveUsers = (users) => {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users))
-}
-
-const loadSession = () => {
-  const raw = localStorage.getItem(SESSION_KEY)
-  return raw ? safeJsonParse(raw, null) : null
-}
-
-const saveSession = (session) => {
-  if (!session) {
-    localStorage.removeItem(SESSION_KEY)
-    return
-  }
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-}
-
-const encoder = new TextEncoder()
-const toBase64 = (arrayBuffer) => {
-  const bytes = new Uint8Array(arrayBuffer)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return btoa(binary)
-}
-const fromBase64 = (b64) => Uint8Array.from(atob(b64), c => c.charCodeAt(0))
-
-const randomSaltBase64 = (length = 16) => {
-  const bytes = new Uint8Array(length)
-  crypto.getRandomValues(bytes)
-  return toBase64(bytes.buffer)
-}
-
-const pbkdf2HashBase64 = async (password, saltBase64, iterations = 100_000) => {
-  if (!crypto?.subtle) {
-    // Extremely degraded fallback (should be rare in modern browsers)
-    return btoa(`${saltBase64}:${password}`)
-  }
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits'],
-  )
-  const saltBytes = fromBase64(saltBase64)
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltBytes,
-      iterations,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256,
-  )
-  return toBase64(bits)
-}
+const TOKEN_KEY = 'qb_auth_token_v1'
 
 const validateUsername = (username) => {
   const normalized = username.trim()
@@ -93,8 +20,36 @@ const validatePassword = (password) => {
 
 const createAuthStore = () => {
   const { subscribe, set, update } = writable({
-    user: loadSession()?.user ?? null,
+    user: null,
+    token: localStorage.getItem(TOKEN_KEY) || null,
+    ready: false,
   })
+
+  const saveToken = (token) => {
+    if (!token) {
+      localStorage.removeItem(TOKEN_KEY)
+      return
+    }
+    localStorage.setItem(TOKEN_KEY, token)
+  }
+
+  const init = async () => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) {
+      set({ user: null, token: null, ready: true })
+      return
+    }
+    try {
+      const data = await apiFetch('/api/me', { token })
+      set({ user: data.user, token, ready: true })
+    } catch {
+      saveToken(null)
+      set({ user: null, token: null, ready: true })
+    }
+  }
+
+  // kick off init at module load
+  void init()
 
   return {
     subscribe,
@@ -102,54 +57,29 @@ const createAuthStore = () => {
     signup: async (username, password) => {
       const u = validateUsername(username)
       const p = validatePassword(password)
-      const users = loadUsers()
-      if (users[u]) {
-        throw new Error('Username already exists.')
-      }
-
-      const salt = randomSaltBase64()
-      const hash = await pbkdf2HashBase64(p, salt)
-
-      users[u] = { salt, hash, createdAt: Date.now() }
-      saveUsers(users)
-
-      const session = { user: { username: u }, createdAt: Date.now() }
-      saveSession(session)
-      set({ user: session.user })
+      const data = await apiFetch('/api/signup', { method: 'POST', body: { username: u, password: p } })
+      saveToken(data.token)
+      set({ user: data.user, token: data.token, ready: true })
     },
 
     login: async (username, password) => {
       const u = validateUsername(username)
       const p = validatePassword(password)
-      const users = loadUsers()
-      const record = users[u]
-      if (!record) {
-        throw new Error('Invalid username or password.')
-      }
-
-      const hash = await pbkdf2HashBase64(p, record.salt)
-      if (hash !== record.hash) {
-        throw new Error('Invalid username or password.')
-      }
-
-      const session = { user: { username: u }, createdAt: Date.now() }
-      saveSession(session)
-      set({ user: session.user })
+      const data = await apiFetch('/api/login', { method: 'POST', body: { username: u, password: p } })
+      saveToken(data.token)
+      set({ user: data.user, token: data.token, ready: true })
     },
 
     logout: () => {
-      saveSession(null)
-      set({ user: null })
+      saveToken(null)
+      set({ user: null, token: null, ready: true })
     },
 
     rename: (newUsername) => {
-      // Convenience: allows changing display name without re-registering.
-      const u = validateUsername(newUsername)
-      update((state) => {
-        const session = { user: { username: u }, createdAt: Date.now() }
-        saveSession(session)
-        return { ...state, user: session.user }
-      })
+      // Real accounts: changing username requires a server endpoint; keep as a no-op for now.
+      // (We keep this function so existing callers don't crash.)
+      validateUsername(newUsername)
+      throw new Error('Renaming is not implemented for online accounts.')
     }
   }
 }
