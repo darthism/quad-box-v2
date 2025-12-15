@@ -17,17 +17,17 @@ exports.handler = async (event) => {
       const result = await query(
         `
         select
-          gl.username,
-          u.id as user_id,
+          coalesce(u.username, gl.username) as username,
+          gl.user_id as user_id,
           coalesce(sum(coalesce(elapsed_seconds, 0)), 0) / 60.0 as total_minutes,
           count(*)::int as total_games,
           sum(case when status = 'completed' then 1 else 0 end)::int as completed_games,
           coalesce(sum(points), 0)::bigint as total_score,
           max(played_at) as last_played
         from game_log gl
-        left join app_user u on u.username = gl.username
+        left join app_user u on u.id = gl.user_id
         where gl.status <> 'tombstone'
-        group by gl.username, u.id
+        group by coalesce(u.username, gl.username), gl.user_id
         order by total_minutes desc, total_score desc
         limit $1
         `,
@@ -52,17 +52,17 @@ exports.handler = async (event) => {
     const result = await query(
       `
       select
-        gl.username,
-        u.id as user_id,
+        coalesce(u.username, gl.username) as username,
+        gl.user_id as user_id,
         coalesce(sum(points), 0)::bigint as total_score,
         count(*)::int as total_games,
         sum(case when status = 'completed' then 1 else 0 end)::int as completed_games,
         coalesce(sum(coalesce(elapsed_seconds, 0)), 0) / 60.0 as total_minutes,
         max(played_at) as last_played
       from game_log gl
-      left join app_user u on u.username = gl.username
+      left join app_user u on u.id = gl.user_id
       where gl.status <> 'tombstone'
-      group by gl.username, u.id
+      group by coalesce(u.username, gl.username), gl.user_id
       order by total_score desc, total_minutes desc
       limit $1
       `,

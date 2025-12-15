@@ -51,6 +51,29 @@ const createAuthStore = () => {
   // kick off init at module load
   void init()
 
+  const updateProfile = async ({ username, avatarDataUrl } = {}) => {
+    let u = null
+    if (typeof username === 'string' && username.trim().length > 0) {
+      u = validateUsername(username)
+    }
+
+    const payload = {}
+    if (u) payload.username = u
+    if (avatarDataUrl) payload.avatarDataUrl = avatarDataUrl
+
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) throw new Error('Not logged in.')
+
+    const data = await apiFetch('/api/profile', { method: 'PATCH', token, body: payload })
+    if (data?.token) {
+      saveToken(data.token)
+      set({ user: data.user, token: data.token, ready: true })
+    } else if (data?.user) {
+      set({ user: data.user, token, ready: true })
+    }
+    return data
+  }
+
   return {
     subscribe,
 
@@ -78,12 +101,9 @@ const createAuthStore = () => {
       set({ user: null, token: null, ready: true })
     },
 
-    rename: (newUsername) => {
-      // Real accounts: changing username requires a server endpoint; keep as a no-op for now.
-      // (We keep this function so existing callers don't crash.)
-      validateUsername(newUsername)
-      throw new Error('Renaming is not implemented for online accounts.')
-    }
+    updateProfile,
+
+    rename: async (newUsername) => updateProfile({ username: newUsername }),
   }
 }
 

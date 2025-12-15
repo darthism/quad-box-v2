@@ -39,6 +39,20 @@ const pointsForGame = ({ modalities, nBack, trialTimeMs, accuracyPercent }) => {
   return (numer + 500000n) / 1000000n
 }
 
+const isEligibleForPoints = ({ status, completedTrials, matchChance }) => {
+  if (status !== 'completed') return { ok: false, reason: 'not_completed' }
+
+  const trials = Number(completedTrials)
+  if (!Number.isFinite(trials) || trials < 20) return { ok: false, reason: 'min_trials' }
+
+  // matchChance is a percent (from settings), representing expected match rate across matchable trials.
+  const mc = Number(matchChance)
+  if (!Number.isFinite(mc)) return { ok: false, reason: 'missing_match_rate' }
+  if (mc < 20 || mc > 40) return { ok: false, reason: 'match_rate_out_of_range' }
+
+  return { ok: true }
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed()
 
@@ -54,13 +68,20 @@ exports.handler = async (event) => {
 
     const nBack = Number(body.nBack ?? 0)
     const modalities = inferModalities(body)
+    const completedTrials = body.completedTrials === null || body.completedTrials === undefined
+      ? null
+      : Number(body.completedTrials)
+    const matchChance = body.matchChance === null || body.matchChance === undefined
+      ? null
+      : Number(body.matchChance)
     const trialTimeMs = body.trialTimeMs ? Number(body.trialTimeMs) : null
     const elapsedSeconds = body.elapsedSeconds ? Number(body.elapsedSeconds) : null
     const accuracyPercent = body.accuracyPercent === null || body.accuracyPercent === undefined
       ? null
       : Number(body.accuracyPercent)
 
-    const points = status === 'completed'
+    const eligibility = isEligibleForPoints({ status, completedTrials, matchChance })
+    const points = eligibility.ok
       ? pointsForGame({ modalities, nBack, trialTimeMs, accuracyPercent })
       : 0n
 
@@ -87,8 +108,14 @@ exports.handler = async (event) => {
       ],
     )
 
-    return json(200, { ok: true, points: points.toString() })
+    return json(200, { ok: true, points: points.toString(), eligibleForPoints: eligibility.ok, reason: eligibility.ok ? null : eligibility.reason })
   } catch (e) {
+    if (e?.code === '42703' || String(e?.message || '').includes('does not exist')) {
+      return json(500, {
+        error: 'Database schema is out of date. Run POST /api/init-db (with X-Admin-Token) to add required columns, then retry.',
+        code: e?.code || null,
+      })
+    }
     return json(e.statusCode || 500, { error: e.message || 'submit failed' })
   }
 }

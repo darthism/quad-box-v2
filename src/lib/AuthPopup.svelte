@@ -10,12 +10,20 @@
   let password2 = ''
   let avatarDataUrl = ''
   let avatarPreviewUrl = ''
+  let profileUsername = ''
+  let profileAvatarDataUrl = ''
+  let profileAvatarPreviewUrl = ''
   let message = null
   let busy = false
 
   const openModal = () => {
     show = true
     message = null
+    if ($auth.user) {
+      profileUsername = $auth.user.username
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : ''
+    }
   }
 
   const closeModal = () => {
@@ -26,6 +34,9 @@
     password2 = ''
     avatarDataUrl = ''
     avatarPreviewUrl = ''
+    profileUsername = ''
+    profileAvatarDataUrl = ''
+    profileAvatarPreviewUrl = ''
   }
 
   const handleKeydown = (event) => {
@@ -70,6 +81,20 @@
     }
   }
 
+  const onProfileAvatarChange = async (event) => {
+    message = null
+    try {
+      const file = event?.currentTarget?.files?.[0]
+      const dataUrl = await fileToAvatarDataUrl(file)
+      profileAvatarDataUrl = dataUrl
+      profileAvatarPreviewUrl = dataUrl
+    } catch (e) {
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : ''
+      message = { kind: 'error', text: e?.message ?? 'Invalid avatar.' }
+    }
+  }
+
   const doLogin = async () => {
     message = null
     busy = true
@@ -100,6 +125,31 @@
       password2 = ''
     } catch (e) {
       message = { kind: 'error', text: e?.message ?? 'Sign up failed.' }
+    } finally {
+      busy = false
+    }
+  }
+
+  const doSaveProfile = async () => {
+    message = null
+    busy = true
+    try {
+      const current = $auth.user?.username ?? ''
+      const newName = (profileUsername ?? '').trim()
+      const wantsName = newName && newName !== current
+      const wantsAvatar = !!profileAvatarDataUrl
+      if (!wantsName && !wantsAvatar) {
+        throw new Error('No changes to save.')
+      }
+      await auth.updateProfile({
+        username: wantsName ? newName : undefined,
+        avatarDataUrl: wantsAvatar ? profileAvatarDataUrl : undefined,
+      })
+      message = { kind: 'success', text: 'Profile updated.' }
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : profileAvatarPreviewUrl
+    } catch (e) {
+      message = { kind: 'error', text: e?.message ?? 'Profile update failed.' }
     } finally {
       busy = false
     }
@@ -183,8 +233,39 @@
       {:else}
         <div class="mt-4 space-y-3">
           <p class="text-sm opacity-80">You are logged in as <strong>{$auth.user.username}</strong>.</p>
+
+          <div class="divider my-2"></div>
+          <div class="space-y-3">
+            <div class="text-sm font-semibold">Profile</div>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Username</span></div>
+              <input class="input input-bordered w-full" bind:value={profileUsername} placeholder="3–20 chars: letters, numbers, _" />
+            </label>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Avatar</span></div>
+              <input class="file-input file-input-bordered w-full" type="file" accept="image/png,image/jpeg,image/webp" on:change={onProfileAvatarChange} />
+              {#if profileAvatarPreviewUrl}
+                <div class="mt-2 flex items-center gap-3">
+                  <img alt="Avatar preview" class="w-12 h-12 rounded-full ring-1 ring-base-content/10" src={profileAvatarPreviewUrl} />
+                  <div class="text-xs opacity-70">Must pass moderation. Shown publicly on the leaderboard.</div>
+                </div>
+              {/if}
+            </label>
+          </div>
+
+          {#if message}
+            <div class={"alert " + (message.kind === 'error' ? 'alert-error' : 'alert-success')}>
+              <span>{message.text}</span>
+            </div>
+          {/if}
           <div class="flex gap-2">
-            <button class="btn btn-error flex-1" on:click={() => auth.logout()}>Log out</button>
+            <button class="btn btn-primary flex-1" disabled={busy} on:click={doSaveProfile}>
+              Save profile
+              {#if busy}<span class="loading loading-spinner"></span>{/if}
+            </button>
+            <button class="btn btn-error flex-1" disabled={busy} on:click={() => auth.logout()}>Log out</button>
             <button class="btn flex-1" on:click={closeModal}>Close</button>
           </div>
         </div>

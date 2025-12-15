@@ -77,6 +77,13 @@ exports.handler = async (event) => {
     const token = signToken({ sub: user.id, username: user.username })
     return json(200, { token, user: { id: user.id, username: user.username } })
   } catch (e) {
+    if (e?.code === '42703' || String(e?.message || '').includes('does not exist')) {
+      // DB schema is older than the code. Run init-db to apply ALTER TABLE migrations.
+      return json(500, {
+        error: 'Database schema is out of date. Run POST /api/init-db (with X-Admin-Token) to add required columns, then retry signup.',
+        code: e?.code || null,
+      })
+    }
     if (String(e.message || '').includes('duplicate key value') || e.code === '23505') {
       return badRequest('Username already exists.')
     }

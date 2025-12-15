@@ -45,6 +45,8 @@ const createAnalyticsStore = () => {
           mode: game.mode ?? null,
           nBack: game.nBack ?? null,
           modalities: Array.isArray(game.tags) ? game.tags.length : null,
+          completedTrials: typeof game?.completedTrials === 'number' ? game.completedTrials : null,
+          matchChance: typeof game?.matchChance === 'number' ? game.matchChance : null,
           trialTimeMs: trialTimeMsForGame(game),
           elapsedSeconds: game.elapsedSeconds ?? null,
           accuracyPercent: (typeof game?.total?.percent === 'number' && Number.isFinite(game.total.percent)) ? game.total.percent : null,
