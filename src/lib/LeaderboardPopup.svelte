@@ -57,13 +57,72 @@
     return 1
   }
 
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
+
+  const trialTimeMsForGame = (game) => {
+    // Most modes store a fixed trial time in ms.
+    if (typeof game?.trialTime === 'number' && Number.isFinite(game.trialTime) && game.trialTime > 0) {
+      return game.trialTime
+    }
+
+    // Tally modes don't have a fixed timer, but we compute an average trial time in addScoreMetadata.
+    const avg = game?.total?.averageTrialTime
+    if (typeof avg === 'number' && Number.isFinite(avg) && avg > 0) {
+      return avg
+    }
+
+    return null
+  }
+
+  const speedMultiplierScaled1000 = (game) => {
+    // Spec: 1× at 2.5s, up to 2× at 1.25s.
+    // We model this as multiplier = clamp(2.5s / trialSeconds, 1, 2).
+    // Return scaled integer (x1000) so we can keep points as BigInt.
+    const ms = trialTimeMsForGame(game)
+    if (!ms) return 1000
+
+    const m = (2500 * 1000) / ms
+    return Math.round(clamp(m, 1000, 2000))
+  }
+
   const pointsForGame = (game) => {
     // Default points gained per completed game is 2^(stimuliCount)
     // stimuliCount = modalities * nBack
     const modalities = inferModalities(game)
     const nBack = Number(game?.nBack ?? 0)
     const stimuliCount = Math.max(0, Math.floor(modalities * nBack))
-    return 1n << BigInt(stimuliCount)
+    const base = 1n << BigInt(stimuliCount)
+
+    // Multiply by trial-speed factor (scaled by 1000, rounded to nearest int point).
+    const m1000 = BigInt(speedMultiplierScaled1000(game))
+    return (base * m1000 + 500n) / 1000n
+  }
+
+  const RANKS = [
+    { name: 'Adept', min: 0n, max: 250n, badge: 'badge badge-ghost' },
+    { name: 'Scholar', min: 250n, max: 750n, badge: 'badge badge-neutral' },
+    { name: 'Savant', min: 750n, max: 1750n, badge: 'badge badge-primary' },
+    { name: 'Expert', min: 1750n, max: 3750n, badge: 'badge badge-secondary' },
+    { name: 'Mastermind', min: 3750n, max: 7750n, badge: 'badge badge-accent' },
+    { name: 'Visionary', min: 7750n, max: 15750n, badge: 'badge badge-info' },
+    { name: 'Genius', min: 15750n, max: 31750n, badge: 'badge badge-success' },
+    { name: 'Virtuoso', min: 31750n, max: 63750n, badge: 'badge badge-warning' },
+    { name: 'Luminary', min: 63750n, max: 127750n, badge: 'badge badge-error' },
+    { name: 'Prodigy', min: 127750n, max: 255750n, badge: 'badge badge-outline badge-primary' },
+    { name: 'Oracle', min: 255750n, max: 511750n, badge: 'badge badge-outline badge-secondary' },
+    { name: 'Sage', min: 511750n, max: 1023750n, badge: 'badge badge-outline badge-accent' },
+    { name: 'Philosopher', min: 1023750n, max: 2047750n, badge: 'badge badge-outline badge-info' },
+    { name: 'Mystic', min: 2047750n, max: 4095750n, badge: 'badge badge-outline badge-success' },
+    { name: 'Transcendent', min: 4095750n, max: null, badge: 'badge badge-outline badge-warning' },
+  ]
+
+  const rankForScore = (score) => {
+    const s = typeof score === 'bigint' ? score : 0n
+    for (const r of RANKS) {
+      if (s < r.min) continue
+      if (r.max === null || s < r.max) return r
+    }
+    return RANKS[0]
   }
 
   const load = async () => {
@@ -142,6 +201,7 @@
               <tr>
                 <th>#</th>
                 <th>User</th>
+                <th>Rank</th>
                 <th>Minutes</th>
                 <th>Total games</th>
                 <th>Completed</th>
@@ -150,12 +210,14 @@
             </thead>
             <tbody>
               {#if minutesRows.length === 0}
-                <tr><td colspan="6" class="opacity-70">No games yet.</td></tr>
+                <tr><td colspan="7" class="opacity-70">No games yet.</td></tr>
               {:else}
                 {#each minutesRows.slice(0, 50) as r, idx (r.username)}
+                  {@const rank = rankForScore(r.totalScore)}
                   <tr>
                     <td>{idx + 1}</td>
                     <td class="font-semibold">{r.username}</td>
+                    <td><span class={rank.badge}>{rank.name}</span></td>
                     <td>{formatMinutes(r.totalMinutes)}</td>
                     <td>{r.totalGames}</td>
                     <td>{r.completedGames}</td>
@@ -173,7 +235,8 @@
               <tr>
                 <th>#</th>
                 <th>User</th>
-                <th>Total score</th>
+                <th>Rank</th>
+                <th>Pts</th>
                 <th>Completed</th>
                 <th>Total games</th>
                 <th>Last played</th>
@@ -181,12 +244,14 @@
             </thead>
             <tbody>
               {#if scoreRows.length === 0}
-                <tr><td colspan="6" class="opacity-70">No games yet.</td></tr>
+                <tr><td colspan="7" class="opacity-70">No games yet.</td></tr>
               {:else}
                 {#each scoreRows.slice(0, 50) as r, idx (r.username)}
+                  {@const rank = rankForScore(r.totalScore)}
                   <tr>
                     <td>{idx + 1}</td>
                     <td class="font-semibold">{r.username}</td>
+                    <td><span class={rank.badge}>{rank.name}</span></td>
                     <td class="font-mono">{formatBigInt(r.totalScore)}</td>
                     <td>{r.completedGames}</td>
                     <td>{r.totalGames}</td>
@@ -202,7 +267,7 @@
       <div class="modal-action flex flex-row-reverse items-center justify-between mt-2">
         <button class="btn" on:click={closeModal}>Close</button>
         <div class="text-xs opacity-70">
-          Total score = sum of 2^(modalities × nBack) per completed game (e.g. dual-4 → 2^8 = 256).
+          Pts per completed game = 2^(modalities × nBack) × speed multiplier (1× at 2.5s → 2× at 1.25s).
         </div>
       </div>
     </div>
