@@ -15,6 +15,8 @@ import ThemeSwapper from './ThemeSwapper.svelte'
 import ChartPopup from "./ChartPopup.svelte"
 import KeybindingsPopup from "./KeybindingsPopup.svelte"
 import InfoPopup from './InfoPopup.svelte'
+import LeaderboardPopup from './LeaderboardPopup.svelte'
+import AuthPopup from './AuthPopup.svelte'
 
 let open = false
 const toggle = () => open = !open
@@ -107,6 +109,8 @@ onMount(() => {
       <div class="flex">
         <InfoPopup />
         <ChartPopup />
+        <LeaderboardPopup />
+        <AuthPopup />
       </div>
     </div>
   </div>
