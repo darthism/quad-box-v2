@@ -49,7 +49,7 @@ exports.handler = async (event) => {
     await query(SQL)
     return json(200, { ok: true })
   } catch (e) {
-    return json(e.statusCode || 500, { error: e.message || 'init failed' })
+    return json(e.statusCode || 500, { error: e.message || 'init failed', code: e?.code || null })
   }
 }
 
