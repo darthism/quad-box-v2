@@ -12,7 +12,7 @@
     {#each RANKS as r (r.name)}
       <li>
         <div class="flex items-center justify-between gap-3">
-          <span class={r.badge}>{r.name}</span>
+          <span class={r.textClass}>{r.name}</span>
           <span class="font-mono text-xs opacity-70">{formatRankRange(r)}</span>
         </div>
       </li>

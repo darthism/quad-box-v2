@@ -125,7 +125,7 @@
                         <span>{r.username}</span>
                       </div>
                     </td>
-                    <td><span class={rank.badge}>{rank.name}</span></td>
+                    <td><span class={rank.textClass}>{rank.name}</span></td>
                     <td>{formatMinutes(r.totalMinutes)}</td>
                     <td>{r.totalGames}</td>
                     <td>{r.completedGames}</td>
@@ -169,7 +169,7 @@
                         <span>{r.username}</span>
                       </div>
                     </td>
-                    <td><span class={rank.badge}>{rank.name}</span></td>
+                    <td><span class={rank.textClass}>{rank.name}</span></td>
                     <td class="font-mono">{formatBigInt(parseBigInt(r.totalScore))}</td>
                     <td>{r.completedGames}</td>
                     <td>{r.totalGames}</td>
