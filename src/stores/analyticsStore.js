@@ -1,6 +1,7 @@
-import { writable } from 'svelte/store'
+import { writable, get } from 'svelte/store'
 import { addGame, getLastRecentGame, getPlayTimeSince4AM  } from '../lib/gamedb'
 import { formatSeconds } from '../lib/utils'
+import { auth } from './authStore'
 
 const loadAnalytics = async () => {
   const lastGame = await getLastRecentGame()
@@ -38,6 +39,7 @@ const createAnalyticsStore = () => {
 
       await addGame({
         ...gameInfo,
+        username: get(auth).user?.username ?? null,
         scores,
         completedTrials: scoresheet.length,
         status
@@ -53,6 +55,7 @@ const createAnalyticsStore = () => {
 
       await addGame({
         ...gameInfo,
+        username: get(auth).user?.username ?? null,
         scores,
         completedTrials: scoresheet.length,
         status,

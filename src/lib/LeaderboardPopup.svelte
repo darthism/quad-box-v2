@@ -1,24 +1,22 @@
 <script>
   import { Trophy } from '@lucide/svelte'
-  import { leaderboard } from '../stores/leaderboardStore'
-  import { auth } from '../stores/authStore'
-  import { analytics } from '../stores/analyticsStore'
+  import { getAllGames } from './gamedb'
 
   let show = false
-  let tab = 'top'
-  let message = null
+  let tab = 'minutes'
+  let loading = false
+  let error = null
 
-  let modeFilter = 'all'
-  let sortBy = 'ncalc'
+  let stats = []
 
   const openModal = () => {
     show = true
-    message = null
+    void load()
   }
 
   const closeModal = () => {
     show = false
-    message = null
+    error = null
   }
 
   const handleKeydown = (event) => {
@@ -29,9 +27,18 @@
     if (event.target.classList.contains('modal')) closeModal()
   }
 
-  const formatPercent = (p) => {
-    if (typeof p !== 'number') return '—'
-    return `${(p * 100).toFixed(0)}%`
+  const formatMinutes = (minutes) => {
+    if (typeof minutes !== 'number') return '—'
+    return minutes.toFixed(minutes >= 10 ? 0 : 1)
+  }
+
+  const formatBigInt = (n) => {
+    try {
+      const s = (n ?? 0n).toString()
+      return s.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    } catch {
+      return '0'
+    }
   }
 
   const formatDate = (ts) => {
@@ -42,47 +49,67 @@
     }
   }
 
-  const submitLast = () => {
-    message = null
+  const inferModalities = (game) => {
+    if (Array.isArray(game?.tags) && game.tags.length > 0) return game.tags.length
+    const title = (game?.title ?? '').toLowerCase()
+    if (title.includes('quad')) return 4
+    if (title.includes('dual')) return 2
+    return 1
+  }
+
+  const pointsForGame = (game) => {
+    // Default points gained per completed game is 2^(stimuliCount)
+    // stimuliCount = modalities * nBack
+    const modalities = inferModalities(game)
+    const nBack = Number(game?.nBack ?? 0)
+    const stimuliCount = Math.max(0, Math.floor(modalities * nBack))
+    return 1n << BigInt(stimuliCount)
+  }
+
+  const load = async () => {
+    loading = true
+    error = null
     try {
-      leaderboard.submitGame($analytics.lastGame, $auth.user?.username)
-      message = { kind: 'success', text: 'Submitted to leaderboard.' }
-      tab = 'top'
-    } catch (e) {
-      message = { kind: 'error', text: e?.message ?? 'Failed to submit.' }
-    }
-  }
+      const games = await getAllGames()
+      const map = new Map()
 
-  const clearAll = () => {
-    if (!confirm('Clear local leaderboard entries?')) return
-    leaderboard.clear()
-  }
-
-  const filtered = (entries) => {
-    let out = entries
-    if (modeFilter !== 'all') {
-      out = out.filter(e => (e.mode ?? e.title) === modeFilter)
-    }
-    return out
-  }
-
-  const sorted = (entries) => {
-    const by = sortBy
-    const copy = [...entries]
-    copy.sort((a, b) => {
-      if (by === 'percent') {
-        return (b.percent ?? -1) - (a.percent ?? -1)
+      for (const g of games) {
+        if (!g || g.status === 'tombstone') continue
+        const username = (g.username && String(g.username).trim()) ? String(g.username).trim() : 'anonymous'
+        if (!map.has(username)) {
+          map.set(username, {
+            username,
+            totalMinutes: 0,
+            totalScore: 0n,
+            totalGames: 0,
+            completedGames: 0,
+            lastPlayed: null,
+          })
+        }
+        const row = map.get(username)
+        row.totalGames += 1
+        row.totalMinutes += (g.elapsedSeconds ?? 0) / 60
+        row.lastPlayed = row.lastPlayed ? Math.max(row.lastPlayed, g.timestamp ?? 0) : (g.timestamp ?? 0)
+        if (g.status === 'completed') {
+          row.completedGames += 1
+          row.totalScore += pointsForGame(g)
+        }
       }
-      // ncalc is primary; fall back to percent
-      const dn = (b.ncalc ?? -1) - (a.ncalc ?? -1)
-      if (dn !== 0) return dn
-      return (b.percent ?? -1) - (a.percent ?? -1)
-    })
-    return copy
+
+      stats = Array.from(map.values())
+    } catch (e) {
+      error = e?.message ?? 'Failed to load leaderboard.'
+    } finally {
+      loading = false
+    }
   }
 
-  $: entries = sorted(filtered($leaderboard))
-  $: modes = Array.from(new Set($leaderboard.map(e => e.mode ?? e.title))).sort()
+  $: minutesRows = [...stats].sort((a, b) => (b.totalMinutes ?? 0) - (a.totalMinutes ?? 0))
+  $: scoreRows = [...stats].sort((a, b) => {
+    const diff = (b.totalScore ?? 0n) - (a.totalScore ?? 0n)
+    if (diff !== 0n) return diff > 0n ? 1 : -1
+    return (b.totalMinutes ?? 0) - (a.totalMinutes ?? 0)
+  })
 </script>
 
 <button class="flex items-center justify-center" on:click={openModal} title="Leaderboard">
@@ -94,52 +121,45 @@
     <div class="modal-box w-[90%] max-w-4xl">
       <div class="flex items-center justify-between">
         <h2 class="text-xl font-bold">Leaderboard</h2>
-        <div class="flex gap-2 items-center">
-          <select class="select select-bordered select-sm" bind:value={modeFilter}>
-            <option value="all">All modes</option>
-            {#each modes as m (m)}
-              <option value={m}>{m}</option>
-            {/each}
-          </select>
-          <select class="select select-bordered select-sm" bind:value={sortBy}>
-            <option value="ncalc">Sort: n-calc</option>
-            <option value="percent">Sort: %</option>
-          </select>
-        </div>
+        <button class="btn btn-sm" on:click={load} disabled={loading}>Refresh</button>
       </div>
 
       <div role="tablist" class="tabs tabs-lift mt-4">
-        <a role="tab" class="tab" class:tab-active={tab === 'top'} on:click={() => tab = 'top'}>Top</a>
-        <a role="tab" class="tab" class:tab-active={tab === 'submit'} on:click={() => tab = 'submit'}>Submit</a>
+        <a role="tab" class="tab" class:tab-active={tab === 'minutes'} on:click={() => tab = 'minutes'}>Total minutes played</a>
+        <a role="tab" class="tab" class:tab-active={tab === 'score'} on:click={() => tab = 'score'}>Total score</a>
       </div>
 
-      {#if tab === 'top'}
+      {#if error}
+        <div class="alert alert-error mt-4"><span>{error}</span></div>
+      {/if}
+
+      {#if loading}
+        <div class="mt-4 opacity-70">Loading…</div>
+      {:else if tab === 'minutes'}
         <div class="mt-4 overflow-x-auto">
           <table class="table table-zebra">
             <thead>
               <tr>
                 <th>#</th>
                 <th>User</th>
-                <th>Mode</th>
-                <th>N</th>
-                <th>Score</th>
-                <th>n-calc</th>
-                <th>When</th>
+                <th>Minutes</th>
+                <th>Total games</th>
+                <th>Completed</th>
+                <th>Last played</th>
               </tr>
             </thead>
             <tbody>
-              {#if entries.length === 0}
-                <tr><td colspan="7" class="opacity-70">No entries yet.</td></tr>
+              {#if minutesRows.length === 0}
+                <tr><td colspan="6" class="opacity-70">No games yet.</td></tr>
               {:else}
-                {#each entries.slice(0, 50) as e, idx (e.id)}
+                {#each minutesRows.slice(0, 50) as r, idx (r.username)}
                   <tr>
                     <td>{idx + 1}</td>
-                    <td class="font-semibold">{e.username}</td>
-                    <td>{e.mode ?? e.title}</td>
-                    <td>{e.nBack}</td>
-                    <td>{formatPercent(e.percent)}</td>
-                    <td>{typeof e.ncalc === 'number' ? e.ncalc.toFixed(2) : '—'}</td>
-                    <td class="text-xs opacity-70">{formatDate(e.timestamp)}</td>
+                    <td class="font-semibold">{r.username}</td>
+                    <td>{formatMinutes(r.totalMinutes)}</td>
+                    <td>{r.totalGames}</td>
+                    <td>{r.completedGames}</td>
+                    <td class="text-xs opacity-70">{r.lastPlayed ? formatDate(r.lastPlayed) : '—'}</td>
                   </tr>
                 {/each}
               {/if}
@@ -147,47 +167,43 @@
           </table>
         </div>
       {:else}
-        <div class="mt-4 space-y-3">
-          {#if !$auth.user}
-            <div class="alert alert-warning">
-              <span>Log in to submit scores.</span>
-            </div>
-          {/if}
-
-          <div class="p-4 bg-base-200 rounded">
-            <div class="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <div class="font-semibold">Last completed game</div>
-                {#if $analytics.lastGame?.status === 'completed'}
-                  <div class="text-sm opacity-80">
-                    {$analytics.lastGame.title} · N={$analytics.lastGame.nBack} · {formatPercent($analytics.lastGame.total?.percent)}
-                    {#if typeof $analytics.lastGame.ncalc === 'number'} · n-calc={$analytics.lastGame.ncalc.toFixed(2)}{/if}
-                  </div>
-                {:else}
-                  <div class="text-sm opacity-70">No recent completed game found.</div>
-                {/if}
-              </div>
-              <button class="btn btn-primary" on:click={submitLast} disabled={!$auth.user || !$analytics.lastGame || $analytics.lastGame.status !== 'completed'}>
-                Submit last game
-              </button>
-            </div>
-          </div>
-
-          {#if message}
-            <div class={"alert " + (message.kind === 'error' ? 'alert-error' : 'alert-success')}>
-              <span>{message.text}</span>
-            </div>
-          {/if}
-
-          <div class="flex justify-between items-center">
-            <button class="btn btn-error btn-sm" on:click={clearAll}>Clear local leaderboard</button>
-            <div class="text-xs opacity-70">Local-only for now (stored on this device).</div>
-          </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>User</th>
+                <th>Total score</th>
+                <th>Completed</th>
+                <th>Total games</th>
+                <th>Last played</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if scoreRows.length === 0}
+                <tr><td colspan="6" class="opacity-70">No games yet.</td></tr>
+              {:else}
+                {#each scoreRows.slice(0, 50) as r, idx (r.username)}
+                  <tr>
+                    <td>{idx + 1}</td>
+                    <td class="font-semibold">{r.username}</td>
+                    <td class="font-mono">{formatBigInt(r.totalScore)}</td>
+                    <td>{r.completedGames}</td>
+                    <td>{r.totalGames}</td>
+                    <td class="text-xs opacity-70">{r.lastPlayed ? formatDate(r.lastPlayed) : '—'}</td>
+                  </tr>
+                {/each}
+              {/if}
+            </tbody>
+          </table>
         </div>
       {/if}
 
       <div class="modal-action flex flex-row-reverse items-center justify-between mt-2">
         <button class="btn" on:click={closeModal}>Close</button>
+        <div class="text-xs opacity-70">
+          Total score = sum of 2^(modalities × nBack) per completed game (e.g. dual-4 → 2^8 = 256).
+        </div>
       </div>
     </div>
   </div>
