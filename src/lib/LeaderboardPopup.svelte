@@ -1,24 +1,23 @@
 <script>
   import { Trophy } from '@lucide/svelte'
-  import { leaderboard } from '../stores/leaderboardStore'
-  import { auth } from '../stores/authStore'
-  import { analytics } from '../stores/analyticsStore'
+  import { apiFetch } from '../lib/api'
+  import { rankForScore, formatBigInt as formatBigIntShared } from './ranks'
 
   let show = false
-  let tab = 'top'
-  let message = null
+  let tab = 'minutes'
+  let loading = false
+  let error = null
 
-  let modeFilter = 'all'
-  let sortBy = 'ncalc'
+  let rows = []
 
   const openModal = () => {
     show = true
-    message = null
+    void load()
   }
 
   const closeModal = () => {
     show = false
-    message = null
+    error = null
   }
 
   const handleKeydown = (event) => {
@@ -29,10 +28,12 @@
     if (event.target.classList.contains('modal')) closeModal()
   }
 
-  const formatPercent = (p) => {
-    if (typeof p !== 'number') return '—'
-    return `${(p * 100).toFixed(0)}%`
+  const formatMinutes = (minutes) => {
+    if (typeof minutes !== 'number') return '—'
+    return minutes.toFixed(minutes >= 10 ? 0 : 1)
   }
+
+  const formatBigInt = (n) => formatBigIntShared(n)
 
   const formatDate = (ts) => {
     try {
@@ -42,47 +43,30 @@
     }
   }
 
-  const submitLast = () => {
-    message = null
+  const parseBigInt = (value) => {
     try {
-      leaderboard.submitGame($analytics.lastGame, $auth.user?.username)
-      message = { kind: 'success', text: 'Submitted to leaderboard.' }
-      tab = 'top'
+      return BigInt(value ?? 0)
+    } catch {
+      return 0n
+    }
+  }
+
+  // ranks are shared (see src/lib/ranks.js)
+
+  const load = async () => {
+    loading = true
+    error = null
+    try {
+      const data = await apiFetch(`/api/leaderboard?category=${encodeURIComponent(tab)}&limit=50`)
+      rows = Array.isArray(data?.rows) ? data.rows : []
     } catch (e) {
-      message = { kind: 'error', text: e?.message ?? 'Failed to submit.' }
+      error = e?.message ?? 'Failed to load leaderboard.'
+    } finally {
+      loading = false
     }
   }
 
-  const clearAll = () => {
-    if (!confirm('Clear local leaderboard entries?')) return
-    leaderboard.clear()
-  }
-
-  const filtered = (entries) => {
-    let out = entries
-    if (modeFilter !== 'all') {
-      out = out.filter(e => (e.mode ?? e.title) === modeFilter)
-    }
-    return out
-  }
-
-  const sorted = (entries) => {
-    const by = sortBy
-    const copy = [...entries]
-    copy.sort((a, b) => {
-      if (by === 'percent') {
-        return (b.percent ?? -1) - (a.percent ?? -1)
-      }
-      // ncalc is primary; fall back to percent
-      const dn = (b.ncalc ?? -1) - (a.ncalc ?? -1)
-      if (dn !== 0) return dn
-      return (b.percent ?? -1) - (a.percent ?? -1)
-    })
-    return copy
-  }
-
-  $: entries = sorted(filtered($leaderboard))
-  $: modes = Array.from(new Set($leaderboard.map(e => e.mode ?? e.title))).sort()
+  $: displayedRows = rows
 </script>
 
 <button class="flex items-center justify-center" on:click={openModal} title="Leaderboard">
@@ -94,52 +78,58 @@
     <div class="modal-box w-[90%] max-w-4xl">
       <div class="flex items-center justify-between">
         <h2 class="text-xl font-bold">Leaderboard</h2>
-        <div class="flex gap-2 items-center">
-          <select class="select select-bordered select-sm" bind:value={modeFilter}>
-            <option value="all">All modes</option>
-            {#each modes as m (m)}
-              <option value={m}>{m}</option>
-            {/each}
-          </select>
-          <select class="select select-bordered select-sm" bind:value={sortBy}>
-            <option value="ncalc">Sort: n-calc</option>
-            <option value="percent">Sort: %</option>
-          </select>
-        </div>
+        <button class="btn btn-sm" on:click={load} disabled={loading}>Refresh</button>
       </div>
 
       <div role="tablist" class="tabs tabs-lift mt-4">
-        <a role="tab" class="tab" class:tab-active={tab === 'top'} on:click={() => tab = 'top'}>Top</a>
-        <a role="tab" class="tab" class:tab-active={tab === 'submit'} on:click={() => tab = 'submit'}>Submit</a>
+        <a role="tab" class="tab" class:tab-active={tab === 'minutes'} on:click={() => { tab = 'minutes'; void load() }}>Total minutes played</a>
+        <a role="tab" class="tab" class:tab-active={tab === 'score'} on:click={() => { tab = 'score'; void load() }}>Total score</a>
       </div>
 
-      {#if tab === 'top'}
+      {#if error}
+        <div class="alert alert-error mt-4"><span>{error}</span></div>
+      {/if}
+
+      {#if loading}
+        <div class="mt-4 opacity-70">Loading…</div>
+      {:else if tab === 'minutes'}
         <div class="mt-4 overflow-x-auto">
           <table class="table table-zebra">
             <thead>
               <tr>
                 <th>#</th>
                 <th>User</th>
-                <th>Mode</th>
-                <th>N</th>
-                <th>Score</th>
-                <th>n-calc</th>
-                <th>When</th>
+                <th>Rank</th>
+                <th>Minutes</th>
+                <th>Total games</th>
+                <th>Completed</th>
+                <th>Last played</th>
               </tr>
             </thead>
             <tbody>
-              {#if entries.length === 0}
-                <tr><td colspan="7" class="opacity-70">No entries yet.</td></tr>
+              {#if displayedRows.length === 0}
+                <tr><td colspan="7" class="opacity-70">No games yet.</td></tr>
               {:else}
-                {#each entries.slice(0, 50) as e, idx (e.id)}
+                {#each displayedRows as r, idx (r.username)}
+                  {@const rank = rankForScore(parseBigInt(r.totalScore))}
                   <tr>
                     <td>{idx + 1}</td>
-                    <td class="font-semibold">{e.username}</td>
-                    <td>{e.mode ?? e.title}</td>
-                    <td>{e.nBack}</td>
-                    <td>{formatPercent(e.percent)}</td>
-                    <td>{typeof e.ncalc === 'number' ? e.ncalc.toFixed(2) : '—'}</td>
-                    <td class="text-xs opacity-70">{formatDate(e.timestamp)}</td>
+                    <td class="font-semibold">
+                      <div class="flex items-center gap-2">
+                        <img
+                          class="w-8 h-8 rounded-full ring-1 ring-base-content/10"
+                          alt=""
+                          loading="lazy"
+                          src={r.avatarUrl || '/quadbox.svg'}
+                        />
+                        <span>{r.username}</span>
+                      </div>
+                    </td>
+                    <td><span class={rank.textClass}>{rank.name}</span></td>
+                    <td>{formatMinutes(r.totalMinutes)}</td>
+                    <td>{r.totalGames}</td>
+                    <td>{r.completedGames}</td>
+                    <td class="text-xs opacity-70">{r.lastPlayed ? formatDate(r.lastPlayed) : '—'}</td>
                   </tr>
                 {/each}
               {/if}
@@ -147,47 +137,56 @@
           </table>
         </div>
       {:else}
-        <div class="mt-4 space-y-3">
-          {#if !$auth.user}
-            <div class="alert alert-warning">
-              <span>Log in to submit scores.</span>
-            </div>
-          {/if}
-
-          <div class="p-4 bg-base-200 rounded">
-            <div class="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <div class="font-semibold">Last completed game</div>
-                {#if $analytics.lastGame?.status === 'completed'}
-                  <div class="text-sm opacity-80">
-                    {$analytics.lastGame.title} · N={$analytics.lastGame.nBack} · {formatPercent($analytics.lastGame.total?.percent)}
-                    {#if typeof $analytics.lastGame.ncalc === 'number'} · n-calc={$analytics.lastGame.ncalc.toFixed(2)}{/if}
-                  </div>
-                {:else}
-                  <div class="text-sm opacity-70">No recent completed game found.</div>
-                {/if}
-              </div>
-              <button class="btn btn-primary" on:click={submitLast} disabled={!$auth.user || !$analytics.lastGame || $analytics.lastGame.status !== 'completed'}>
-                Submit last game
-              </button>
-            </div>
-          </div>
-
-          {#if message}
-            <div class={"alert " + (message.kind === 'error' ? 'alert-error' : 'alert-success')}>
-              <span>{message.text}</span>
-            </div>
-          {/if}
-
-          <div class="flex justify-between items-center">
-            <button class="btn btn-error btn-sm" on:click={clearAll}>Clear local leaderboard</button>
-            <div class="text-xs opacity-70">Local-only for now (stored on this device).</div>
-          </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>User</th>
+                <th>Rank</th>
+                <th>Pts</th>
+                <th>Completed</th>
+                <th>Total games</th>
+                <th>Last played</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if displayedRows.length === 0}
+                <tr><td colspan="7" class="opacity-70">No games yet.</td></tr>
+              {:else}
+                {#each displayedRows as r, idx (r.username)}
+                  {@const rank = rankForScore(parseBigInt(r.totalScore))}
+                  <tr>
+                    <td>{idx + 1}</td>
+                    <td class="font-semibold">
+                      <div class="flex items-center gap-2">
+                        <img
+                          class="w-8 h-8 rounded-full ring-1 ring-base-content/10"
+                          alt=""
+                          loading="lazy"
+                          src={r.avatarUrl || '/quadbox.svg'}
+                        />
+                        <span>{r.username}</span>
+                      </div>
+                    </td>
+                    <td><span class={rank.textClass}>{rank.name}</span></td>
+                    <td class="font-mono">{formatBigInt(parseBigInt(r.totalScore))}</td>
+                    <td>{r.completedGames}</td>
+                    <td>{r.totalGames}</td>
+                    <td class="text-xs opacity-70">{r.lastPlayed ? formatDate(r.lastPlayed) : '—'}</td>
+                  </tr>
+                {/each}
+              {/if}
+            </tbody>
+          </table>
         </div>
       {/if}
 
       <div class="modal-action flex flex-row-reverse items-center justify-between mt-2">
         <button class="btn" on:click={closeModal}>Close</button>
+        <div class="text-xs opacity-70">
+          Global leaderboard (server-side). Pts are computed server-side per completed game.
+        </div>
       </div>
     </div>
   </div>

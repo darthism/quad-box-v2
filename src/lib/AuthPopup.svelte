@@ -8,12 +8,22 @@
   let username = ''
   let password = ''
   let password2 = ''
+  let avatarDataUrl = ''
+  let avatarPreviewUrl = ''
+  let profileUsername = ''
+  let profileAvatarDataUrl = ''
+  let profileAvatarPreviewUrl = ''
   let message = null
   let busy = false
 
   const openModal = () => {
     show = true
     message = null
+    if ($auth.user) {
+      profileUsername = $auth.user.username
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : ''
+    }
   }
 
   const closeModal = () => {
@@ -22,6 +32,11 @@
     busy = false
     password = ''
     password2 = ''
+    avatarDataUrl = ''
+    avatarPreviewUrl = ''
+    profileUsername = ''
+    profileAvatarDataUrl = ''
+    profileAvatarPreviewUrl = ''
   }
 
   const handleKeydown = (event) => {
@@ -30,6 +45,54 @@
 
   const handleBackdropClick = (event) => {
     if (event.target.classList.contains('modal')) closeModal()
+  }
+
+  const fileToAvatarDataUrl = async (file) => {
+    if (!file) return ''
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      throw new Error('Avatar must be a PNG, JPEG, or WebP image.')
+    }
+    // Client-side resize/compress to keep payload small.
+    const bmp = await createImageBitmap(file)
+    const max = 128
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * scale))
+    const h = Math.max(1, Math.round(bmp.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bmp, 0, 0, w, h)
+    // Always output JPEG for size (server accepts jpeg/png/webp; we send jpeg).
+    return canvas.toDataURL('image/jpeg', 0.85)
+  }
+
+  const onAvatarChange = async (event) => {
+    message = null
+    try {
+      const file = event?.currentTarget?.files?.[0]
+      const dataUrl = await fileToAvatarDataUrl(file)
+      avatarDataUrl = dataUrl
+      avatarPreviewUrl = dataUrl
+    } catch (e) {
+      avatarDataUrl = ''
+      avatarPreviewUrl = ''
+      message = { kind: 'error', text: e?.message ?? 'Invalid avatar.' }
+    }
+  }
+
+  const onProfileAvatarChange = async (event) => {
+    message = null
+    try {
+      const file = event?.currentTarget?.files?.[0]
+      const dataUrl = await fileToAvatarDataUrl(file)
+      profileAvatarDataUrl = dataUrl
+      profileAvatarPreviewUrl = dataUrl
+    } catch (e) {
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : ''
+      message = { kind: 'error', text: e?.message ?? 'Invalid avatar.' }
+    }
   }
 
   const doLogin = async () => {
@@ -53,12 +116,40 @@
       if (password !== password2) {
         throw new Error('Passwords do not match.')
       }
-      await auth.signup(username, password)
+      if (!avatarDataUrl) {
+        throw new Error('Avatar is required.')
+      }
+      await auth.signup(username, password, avatarDataUrl)
       message = { kind: 'success', text: 'Account created. You are now logged in.' }
       password = ''
       password2 = ''
     } catch (e) {
       message = { kind: 'error', text: e?.message ?? 'Sign up failed.' }
+    } finally {
+      busy = false
+    }
+  }
+
+  const doSaveProfile = async () => {
+    message = null
+    busy = true
+    try {
+      const current = $auth.user?.username ?? ''
+      const newName = (profileUsername ?? '').trim()
+      const wantsName = newName && newName !== current
+      const wantsAvatar = !!profileAvatarDataUrl
+      if (!wantsName && !wantsAvatar) {
+        throw new Error('No changes to save.')
+      }
+      await auth.updateProfile({
+        username: wantsName ? newName : undefined,
+        avatarDataUrl: wantsAvatar ? profileAvatarDataUrl : undefined,
+      })
+      message = { kind: 'success', text: 'Profile updated.' }
+      profileAvatarDataUrl = ''
+      profileAvatarPreviewUrl = $auth.user?.id ? `/api/avatar?userId=${encodeURIComponent($auth.user.id)}` : profileAvatarPreviewUrl
+    } catch (e) {
+      message = { kind: 'error', text: e?.message ?? 'Profile update failed.' }
     } finally {
       busy = false
     }
@@ -101,6 +192,17 @@
               <div class="label"><span class="label-text">Confirm password</span></div>
               <input class="input input-bordered w-full" type="password" bind:value={password2} autocomplete="new-password" />
             </label>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Avatar (required)</span></div>
+              <input class="file-input file-input-bordered w-full" type="file" accept="image/png,image/jpeg,image/webp" on:change={onAvatarChange} />
+              {#if avatarPreviewUrl}
+                <div class="mt-2 flex items-center gap-3">
+                  <img alt="Avatar preview" class="w-12 h-12 rounded-full ring-1 ring-base-content/10" src={avatarPreviewUrl} />
+                  <div class="text-xs opacity-70">Will be shown publicly on the leaderboard.</div>
+                </div>
+              {/if}
+            </label>
           {/if}
 
           {#if message}
@@ -125,14 +227,45 @@
           </div>
 
           <div class="text-xs opacity-70">
-            This is local-only auth (stored on this device). For a real online account + global leaderboard, we can add a server backend.
+            Online account (stored on the server). Your login is saved on this device via a token.
           </div>
         </div>
       {:else}
         <div class="mt-4 space-y-3">
           <p class="text-sm opacity-80">You are logged in as <strong>{$auth.user.username}</strong>.</p>
+
+          <div class="divider my-2"></div>
+          <div class="space-y-3">
+            <div class="text-sm font-semibold">Profile</div>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Username</span></div>
+              <input class="input input-bordered w-full" bind:value={profileUsername} placeholder="3–20 chars: letters, numbers, _" />
+            </label>
+
+            <label class="form-control w-full">
+              <div class="label"><span class="label-text">Avatar</span></div>
+              <input class="file-input file-input-bordered w-full" type="file" accept="image/png,image/jpeg,image/webp" on:change={onProfileAvatarChange} />
+              {#if profileAvatarPreviewUrl}
+                <div class="mt-2 flex items-center gap-3">
+                  <img alt="Avatar preview" class="w-12 h-12 rounded-full ring-1 ring-base-content/10" src={profileAvatarPreviewUrl} />
+                  <div class="text-xs opacity-70">Must pass moderation. Shown publicly on the leaderboard.</div>
+                </div>
+              {/if}
+            </label>
+          </div>
+
+          {#if message}
+            <div class={"alert " + (message.kind === 'error' ? 'alert-error' : 'alert-success')}>
+              <span>{message.text}</span>
+            </div>
+          {/if}
           <div class="flex gap-2">
-            <button class="btn btn-error flex-1" on:click={() => auth.logout()}>Log out</button>
+            <button class="btn btn-primary flex-1" disabled={busy} on:click={doSaveProfile}>
+              Save profile
+              {#if busy}<span class="loading loading-spinner"></span>{/if}
+            </button>
+            <button class="btn btn-error flex-1" disabled={busy} on:click={() => auth.logout()}>Log out</button>
             <button class="btn flex-1" on:click={closeModal}>Close</button>
           </div>
         </div>

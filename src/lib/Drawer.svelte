@@ -17,6 +17,7 @@ import KeybindingsPopup from "./KeybindingsPopup.svelte"
 import InfoPopup from './InfoPopup.svelte'
 import LeaderboardPopup from './LeaderboardPopup.svelte'
 import AuthPopup from './AuthPopup.svelte'
+import RankDropdown from './RankDropdown.svelte'
 
 let open = false
 const toggle = () => open = !open
@@ -109,6 +110,7 @@ onMount(() => {
       <div class="flex">
         <InfoPopup />
         <ChartPopup />
+        <RankDropdown />
         <LeaderboardPopup />
         <AuthPopup />
       </div>
