@@ -29,17 +29,25 @@ const accuracyMultiplierScaled1000 = (accuracyPercent) => {
   return Math.round(clamp(a, 0, 1) * 2000)
 }
 
+const modalityMultiplierScaled1000 = (modalities) => {
+  // Quad (4) = 1.5x, Tri (3) = 1.25x, Dual (2) or lower = 1x
+  if (modalities >= 4) return 1500
+  if (modalities === 3) return 1250
+  return 1000
+}
+
 const pointsForGame = ({ modalities, nBack, trialTimeMs, accuracyPercent }) => {
-  const stimuliCount = Math.max(0, Math.floor(modalities * nBack))
+  // Base points use 4 modalities worth for everyone (dual gives same base as quad)
+  const stimuliCount = Math.max(0, Math.floor(4 * nBack))
   // Base points at 1x multipliers: 2^(stimuliCount / 2)
-  // (we floor for safety if stimuliCount is odd)
   const baseExponent = Math.floor(stimuliCount / 2)
   const base = 1n << BigInt(baseExponent)
   const speed1000 = BigInt(speedMultiplierScaled1000(trialTimeMs))
   const acc1000 = BigInt(accuracyMultiplierScaled1000(accuracyPercent))
-  // combined multiplier = (speed1000/1000) * (acc1000/1000)
-  const numer = base * speed1000 * acc1000
-  return (numer + 500000n) / 1000000n
+  const mod1000 = BigInt(modalityMultiplierScaled1000(modalities))
+  // combined multiplier = (speed1000/1000) * (acc1000/1000) * (mod1000/1000)
+  const numer = base * speed1000 * acc1000 * mod1000
+  return (numer + 500000000n) / 1000000000n
 }
 
 const isEligibleForPoints = ({ status, completedTrials, matchChance, accuracyPercent }) => {
