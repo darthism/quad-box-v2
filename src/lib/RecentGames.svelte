@@ -6,9 +6,54 @@
   import { formatSeconds } from "./utils"
 
   let games = []
+  let modalityAverages = { position: null, audio: null, color: null, shape: null }
+
+  const calculateModalityAverages = (games) => {
+    // Only look at completed games (not tally mode) with modality scores
+    const eligibleGames = games
+      .filter(g => g.status === 'completed' && g.mode !== 'tally' && !g.title?.startsWith('tally') && !g.title?.startsWith('vtally'))
+      .slice(0, 50)
+    
+    if (eligibleGames.length === 0) {
+      return { position: null, audio: null, color: null, shape: null }
+    }
+
+    const sums = { position: 0, audio: 0, color: 0, shape: 0 }
+    const counts = { position: 0, audio: 0, color: 0, shape: 0 }
+
+    for (const game of eligibleGames) {
+      if (game.scores?.position?.percent !== undefined) {
+        sums.position += game.scores.position.percent
+        counts.position++
+      }
+      if (game.scores?.audio?.percent !== undefined) {
+        sums.audio += game.scores.audio.percent
+        counts.audio++
+      }
+      if (game.scores?.color?.percent !== undefined) {
+        sums.color += game.scores.color.percent
+        counts.color++
+      }
+      // Shape can be stored as shape, shapeColor, or image
+      const shapePercent = game.scores?.shape?.percent ?? game.scores?.shapeColor?.percent ?? game.scores?.image?.percent
+      if (shapePercent !== undefined) {
+        sums.shape += shapePercent
+        counts.shape++
+      }
+    }
+
+    return {
+      position: counts.position > 0 ? sums.position / counts.position : null,
+      audio: counts.audio > 0 ? sums.audio / counts.audio : null,
+      color: counts.color > 0 ? sums.color / counts.color : null,
+      shape: counts.shape > 0 ? sums.shape / counts.shape : null,
+      gamesAnalyzed: eligibleGames.length
+    }
+  }
 
   onMount(async () => {
     games = await getLastMonthGames()
+    modalityAverages = calculateModalityAverages(games)
   })
 
   const getStatusColor = (status) => {
@@ -109,7 +154,41 @@
   }
 
   $: filteredGames = $recentGamesState.filter === "completed" ? games.filter(game => game.status === "completed") : games.filter(game => ['completed', 'cancelled'].includes(game.status))
+
+  const hasAnyModality = (avgs) => avgs.position !== null || avgs.audio !== null || avgs.color !== null || avgs.shape !== null
 </script>
+
+{#if hasAnyModality(modalityAverages)}
+<div class="mb-4 p-4 rounded-lg" class:bg-base-200={$settings.theme === 'light'} class:bg-base-300={$settings.theme === 'dark'}>
+  <div class="text-sm opacity-70 mb-2">Last {modalityAverages.gamesAnalyzed} games • Average modality accuracy</div>
+  <div class="flex flex-wrap gap-3">
+    {#if modalityAverages.position !== null}
+      <div class="flex items-center gap-2">
+        <span class="text-sm opacity-70">Position:</span>
+        <span class={'py-1 px-2 rounded text-sm font-medium ' + getPercentClass(modalityAverages.position)}>{formatPercent(modalityAverages.position)}</span>
+      </div>
+    {/if}
+    {#if modalityAverages.audio !== null}
+      <div class="flex items-center gap-2">
+        <span class="text-sm opacity-70">Audio:</span>
+        <span class={'py-1 px-2 rounded text-sm font-medium ' + getPercentClass(modalityAverages.audio)}>{formatPercent(modalityAverages.audio)}</span>
+      </div>
+    {/if}
+    {#if modalityAverages.color !== null}
+      <div class="flex items-center gap-2">
+        <span class="text-sm opacity-70">Color:</span>
+        <span class={'py-1 px-2 rounded text-sm font-medium ' + getPercentClass(modalityAverages.color)}>{formatPercent(modalityAverages.color)}</span>
+      </div>
+    {/if}
+    {#if modalityAverages.shape !== null}
+      <div class="flex items-center gap-2">
+        <span class="text-sm opacity-70">Shape:</span>
+        <span class={'py-1 px-2 rounded text-sm font-medium ' + getPercentClass(modalityAverages.shape)}>{formatPercent(modalityAverages.shape)}</span>
+      </div>
+    {/if}
+  </div>
+</div>
+{/if}
 
 <table class="table table-auto">
   <thead>
